@@ -1,220 +1,482 @@
-import React, { useState } from "react";
-import { createRoot } from "react-dom/client";
-import { addDoc, collection, doc, runTransaction, serverTimestamp } from "firebase/firestore";
-import { FileText, Plus, Save, Trash2, Upload, X } from "lucide-react";
-import { db, FIREBASE_PROJECT_ID } from "./firebase";
-import { generateReportPDF, money, parseMoney, readFileAsDataURL } from "./lib/pdf";
-import "./style.css";
+import React, { useMemo, useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import { jsPDF } from 'jspdf';
+import { db, firebaseProjectId } from './firebase';
+import {
+  doc,
+  runTransaction,
+  serverTimestamp,
+  collection,
+  addDoc
+} from 'firebase/firestore';
+import { FileText, Plus, Trash2, Camera, Save, RotateCcw, AlertTriangle } from 'lucide-react';
+import './styles.css';
 
-const emptyReport = {
-  cliente: "",
-  veiculo: "",
-  dataRecebimento: "",
-  dataEntrega: "",
-  problema: "",
-  diagnostico: "",
-  servicos: "",
-  itens: [{ descricao: "", valor: "" }]
+const emptyForm = {
+  cliente: '',
+  veiculo: '',
+  placa: '',
+  km: '',
+  dataRecebimento: '',
+  dataEntrega: '',
+  problema: '',
+  diagnostico: '',
+  conclusao: 'Relatório elaborado de forma técnica e profissional para registro dos serviços executados.'
 };
 
-function currentYear() {
-  return new Date().getFullYear();
+function moneyBR(value) {
+  const n = Number(value || 0);
+  return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
-function padNumber(num) {
-  return String(num).padStart(3, "0");
+function dateBR(value) {
+  if (!value) return '';
+  const [year, month, day] = value.split('-');
+  return `${day}/${month}/${year}`;
+}
+
+function pad3(n) {
+  return String(n).padStart(3, '0');
+}
+
+function readFileAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function imageDataToJpeg(dataUrl, maxWidth = 1500, quality = 0.82) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxWidth / img.width);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
 }
 
 async function getNextReportNumber() {
-  const year = currentYear();
-  const counterRef = doc(db, "contadores", String(year));
+  const year = new Date().getFullYear();
+  const counterRef = doc(db, 'contadores', String(year));
 
-  const nextNumber = await runTransaction(db, async (transaction) => {
-    const snap = await transaction.get(counterRef);
-    const atual = snap.exists() ? Number(snap.data().ultimo || 0) : 0;
-    const proximo = atual + 1;
-    transaction.set(counterRef, { ultimo: proximo, ano: year, atualizadoEm: serverTimestamp() }, { merge: true });
-    return proximo;
-  });
+  try {
+    const next = await runTransaction(db, async (transaction) => {
+      const counterDoc = await transaction.get(counterRef);
+      const current = counterDoc.exists() ? Number(counterDoc.data().ultimo || 0) : 0;
+      const proximo = current + 1;
+      transaction.set(counterRef, {
+        ultimo: proximo,
+        ano: year,
+        atualizadoEm: serverTimestamp()
+      }, { merge: true });
+      return proximo;
+    });
 
-  return `${padNumber(nextNumber)}/${year}`;
+    return {
+      numero: `${pad3(next)}/${year}`,
+      origem: 'firebase',
+      sequencial: next,
+      ano: year
+    };
+  } catch (error) {
+    const key = `contador_local_${year}`;
+    const current = Number(localStorage.getItem(key) || 0);
+    const next = current + 1;
+    localStorage.setItem(key, String(next));
+
+    return {
+      numero: `${pad3(next)}/${year}`,
+      origem: 'local',
+      sequencial: next,
+      ano: year,
+      erroFirebase: `${error.code || 'erro'} - ${error.message || error}`
+    };
+  }
 }
 
-function App() {
-  const [report, setReport] = useState(emptyReport);
-  const [fotos, setFotos] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [msg, setMsg] = useState("");
-
-  const total = report.itens.reduce((sum, item) => sum + parseMoney(item.valor), 0);
-
-  function updateField(field, value) {
-    setReport((old) => ({ ...old, [field]: value }));
+async function trySaveReport(payload) {
+  try {
+    const ref = await addDoc(collection(db, 'relatorios'), {
+      ...payload,
+      criadoEm: serverTimestamp()
+    });
+    return { ok: true, id: ref.id };
+  } catch (error) {
+    return { ok: false, error: `${error.code || 'erro'} - ${error.message || error}` };
   }
+}
 
-  function updateItem(index, field, value) {
-    setReport((old) => {
-      const itens = [...old.itens];
-      itens[index] = { ...itens[index], [field]: value };
-      return { ...old, itens };
+function addWrappedText(pdf, text, x, y, maxWidth, lineHeight = 6) {
+  if (!text) return y;
+  const lines = pdf.splitTextToSize(String(text), maxWidth);
+  pdf.text(lines, x, y);
+  return y + lines.length * lineHeight;
+}
+
+function ensurePage(pdf, y, needed = 25) {
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  if (y + needed > pageHeight - 18) {
+    pdf.addPage();
+    return 20;
+  }
+  return y;
+}
+
+async function generatePdf({ form, servicos, custos, fotos, numeroRelatorio }) {
+  const pdf = new jsPDF('p', 'mm', 'a4');
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const margin = 15;
+  let y = 18;
+
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(17);
+  pdf.text('RELATÓRIO DE SERVIÇO MECÂNICO', margin, y);
+  y += 8;
+
+  pdf.setFontSize(10);
+  pdf.setTextColor(80, 80, 80);
+  pdf.text(`Relatório Nº ${numeroRelatorio}`, margin, y);
+  y += 8;
+  pdf.setTextColor(0, 0, 0);
+
+  pdf.setDrawColor(180);
+  pdf.line(margin, y, pageWidth - margin, y);
+  y += 8;
+
+  const info = [
+    ['Cliente', form.cliente],
+    ['Veículo', form.veiculo],
+    ['Placa', form.placa],
+    ['KM', form.km],
+    ['Data de recebimento', dateBR(form.dataRecebimento)],
+    ['Data de entrega', dateBR(form.dataEntrega)]
+  ].filter(([, value]) => value);
+
+  pdf.setFontSize(10);
+  info.forEach(([label, value]) => {
+    y = ensurePage(pdf, y, 8);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(`${label}:`, margin, y);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(String(value), margin + 42, y);
+    y += 6;
+  });
+
+  const sections = [
+    ['Problema Relatado pelo Cliente', form.problema],
+    ['Diagnóstico Técnico', form.diagnostico]
+  ];
+
+  sections.forEach(([title, content]) => {
+    if (!content) return;
+    y += 4;
+    y = ensurePage(pdf, y, 25);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(12);
+    pdf.text(title, margin, y);
+    y += 7;
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(10);
+    y = addWrappedText(pdf, content, margin, y, pageWidth - margin * 2, 5.5);
+  });
+
+  if (servicos.some(s => s.descricao.trim())) {
+    y += 5;
+    y = ensurePage(pdf, y, 25);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(12);
+    pdf.text('Serviços Realizados', margin, y);
+    y += 7;
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(10);
+    servicos.filter(s => s.descricao.trim()).forEach((s) => {
+      y = ensurePage(pdf, y, 10);
+      y = addWrappedText(pdf, `• ${s.descricao}`, margin, y, pageWidth - margin * 2, 5.5);
     });
   }
 
-  function addItem() {
-    setReport((old) => ({ ...old, itens: [...old.itens, { descricao: "", valor: "" }] }));
+  if (custos.some(c => c.item.trim())) {
+    y += 5;
+    y = ensurePage(pdf, y, 40);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(12);
+    pdf.text('Orçamento / Custos', margin, y);
+    y += 7;
+
+    const tableX = margin;
+    const tableW = pageWidth - margin * 2;
+    const col1 = tableW - 38;
+    const rowH = 8;
+    pdf.setFontSize(10);
+    pdf.setFillColor(235, 235, 235);
+    pdf.rect(tableX, y - 5.5, tableW, rowH, 'F');
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Item', tableX + 2, y);
+    pdf.text('Valor', tableX + col1 + 2, y);
+    y += rowH;
+
+    pdf.setFont('helvetica', 'normal');
+    let total = 0;
+    custos.filter(c => c.item.trim()).forEach(c => {
+      y = ensurePage(pdf, y, 12);
+      const valor = Number(c.valor || 0);
+      total += valor;
+      pdf.rect(tableX, y - 5.5, tableW, rowH);
+      pdf.text(String(c.item), tableX + 2, y, { maxWidth: col1 - 4 });
+      pdf.text(moneyBR(valor), tableX + col1 + 2, y);
+      y += rowH;
+    });
+
+    y = ensurePage(pdf, y, 12);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFillColor(235, 235, 235);
+    pdf.rect(tableX, y - 5.5, tableW, rowH, 'F');
+    pdf.rect(tableX, y - 5.5, tableW, rowH);
+    pdf.text('TOTAL', tableX + 2, y);
+    pdf.text(moneyBR(total), tableX + col1 + 2, y);
+    y += rowH + 4;
   }
 
-  function removeItem(index) {
-    setReport((old) => ({ ...old, itens: old.itens.filter((_, i) => i !== index) }));
-  }
+  if (fotos.length) {
+    y += 3;
+    y = ensurePage(pdf, y, 35);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(14);
+    pdf.text('Registro Fotográfico', margin, y);
+    y += 8;
 
-  async function handleFotos(files) {
-    const selected = Array.from(files || []);
-    if (!selected.length) return;
-
-    const novasFotos = [];
-    for (const file of selected) {
-      if (!file.type.startsWith("image/")) continue;
-      const dataUrl = await readFileAsDataURL(file);
-      novasFotos.push({
-        id: crypto.randomUUID(),
-        nome: file.name,
-        dataUrl,
-        legenda: ""
-      });
+    for (const foto of fotos) {
+      y = ensurePage(pdf, y, 88);
+      const jpeg = await imageDataToJpeg(foto.preview);
+      const imgProps = pdf.getImageProperties(jpeg);
+      const maxW = pageWidth - margin * 2;
+      const maxH = 82;
+      let imgW = maxW;
+      let imgH = imgW * imgProps.height / imgProps.width;
+      if (imgH > maxH) {
+        imgH = maxH;
+        imgW = imgH * imgProps.width / imgProps.height;
+      }
+      const x = margin + (maxW - imgW) / 2;
+      pdf.addImage(jpeg, 'JPEG', x, y, imgW, imgH, undefined, 'FAST');
+      y += imgH + 5;
+      if (foto.legenda) {
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(10);
+        pdf.setTextColor(80, 80, 80);
+        y = addWrappedText(pdf, foto.legenda, margin, y, pageWidth - margin * 2, 5.5);
+        pdf.setTextColor(0, 0, 0);
+      }
+      y += 6;
     }
-    setFotos((old) => [...old, ...novasFotos]);
   }
 
-  function updateLegenda(id, legenda) {
-    setFotos((old) => old.map((foto) => foto.id === id ? { ...foto, legenda } : foto));
+  if (form.conclusao) {
+    y = ensurePage(pdf, y, 25);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(10);
+    pdf.setTextColor(80, 80, 80);
+    addWrappedText(pdf, form.conclusao, margin, y, pageWidth - margin * 2, 5.5);
   }
 
-  function removeFoto(id) {
-    setFotos((old) => old.filter((foto) => foto.id !== id));
+  const safeNumber = numeroRelatorio.replace('/', '-');
+  const cliente = form.cliente ? form.cliente.replace(/[^a-z0-9]/gi, '_').toLowerCase() : 'cliente';
+  pdf.save(`relatorio_${safeNumber}_${cliente}.pdf`);
+}
+
+function App() {
+  const [form, setForm] = useState(emptyForm);
+  const [servicos, setServicos] = useState([{ descricao: '' }]);
+  const [custos, setCustos] = useState([{ item: '', valor: '' }]);
+  const [fotos, setFotos] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState(null);
+
+  const total = useMemo(() => custos.reduce((sum, c) => sum + Number(c.valor || 0), 0), [custos]);
+
+  function updateForm(field, value) {
+    setForm(prev => ({ ...prev, [field]: value }));
   }
 
-  function validate() {
-    if (!report.cliente.trim()) return "Preencha o nome do cliente.";
-    if (!report.veiculo.trim()) return "Preencha o veículo.";
-    return "";
+  async function handleFiles(event) {
+    const files = Array.from(event.target.files || []);
+    const mapped = await Promise.all(files.map(async (file) => ({
+      id: `${Date.now()}-${Math.random()}`,
+      fileName: file.name,
+      legenda: '',
+      preview: await readFileAsDataURL(file)
+    })));
+    setFotos(prev => [...prev, ...mapped]);
+    event.target.value = '';
   }
 
-  async function salvarEGerarPDF() {
-    const error = validate();
-    if (error) {
-      setMsg(error);
-      return;
-    }
-
+  async function handleGenerate() {
     setLoading(true);
-    setMsg("");
+    setMessage(null);
     try {
-      const numeroRelatorio = await getNextReportNumber();
+      const numberInfo = await getNextReportNumber();
+      const numeroRelatorio = numberInfo.numero;
+
       const payload = {
-        ...report,
         numeroRelatorio,
+        numeroOrigem: numberInfo.origem,
+        cliente: form.cliente,
+        veiculo: form.veiculo,
+        placa: form.placa,
+        km: form.km,
+        dataRecebimento: form.dataRecebimento,
+        dataEntrega: form.dataEntrega,
+        problema: form.problema,
+        diagnostico: form.diagnostico,
+        conclusao: form.conclusao,
+        servicos: servicos.filter(s => s.descricao.trim()),
+        custos: custos.filter(c => c.item.trim()),
         total,
-        fotos: fotos.map((foto) => ({ nome: foto.nome, legenda: foto.legenda })),
-        criadoEm: serverTimestamp(),
-        projetoFirebase: FIREBASE_PROJECT_ID,
-        observacao: "Fotos não são salvas no Firebase Storage nesta versão. Elas entram diretamente no PDF gerado."
+        fotos: fotos.map(f => ({ fileName: f.fileName, legenda: f.legenda })),
+        projetoFirebaseUsado: firebaseProjectId
       };
 
-      await addDoc(collection(db, "relatorios"), payload);
-      await generateReportPDF({ report, fotos, numeroRelatorio, draft: false });
-      setMsg(`Relatório ${numeroRelatorio} salvo no Firestore e PDF gerado com sucesso.`);
+      const saveResult = await trySaveReport(payload);
+      await generatePdf({ form, servicos, custos, fotos, numeroRelatorio });
+
+      if (saveResult.ok && numberInfo.origem === 'firebase') {
+        setMessage({ type: 'success', text: `PDF gerado e relatório salvo no Firebase. Número: ${numeroRelatorio}` });
+      } else if (saveResult.ok && numberInfo.origem === 'local') {
+        setMessage({ type: 'warning', text: `PDF gerado. Numeração local usada: ${numeroRelatorio}. Firebase não respondeu: ${numberInfo.erroFirebase}` });
+      } else {
+        setMessage({ type: 'warning', text: `PDF gerado. Não salvou no Firebase, mas o PDF foi baixado. Erro: ${saveResult.error || numberInfo.erroFirebase}` });
+      }
     } catch (error) {
-      console.error(error);
-      setMsg(`Erro: ${error?.code || "falha"} - ${error?.message || "não foi possível salvar/gerar o PDF"}`);
+      setMessage({ type: 'error', text: `Não foi possível gerar o PDF: ${error.message || error}` });
     } finally {
       setLoading(false);
     }
   }
 
-  async function gerarRascunho() {
-    const numeroRelatorio = `RASCUNHO-${currentYear()}`;
-    await generateReportPDF({ report, fotos, numeroRelatorio, draft: true });
+  function handleDraftPdf() {
+    generatePdf({ form, servicos, custos, fotos, numeroRelatorio: 'RASCUNHO' });
   }
 
-  function limpar() {
-    setReport(emptyReport);
+  function clearAll() {
+    if (!confirm('Deseja limpar todo o formulário?')) return;
+    setForm(emptyForm);
+    setServicos([{ descricao: '' }]);
+    setCustos([{ item: '', valor: '' }]);
     setFotos([]);
-    setMsg("");
+    setMessage(null);
   }
 
   return (
-    <main className="page">
-      <section className="hero">
+    <div className="app">
+      <header className="hero">
         <div>
           <p className="eyebrow">AC Auto Elétrica</p>
-          <h1>Gerador de Relatórios de Serviço</h1>
-          <p>Preencha o relatório, adicione fotos com legenda, salve no Firestore e gere o PDF final.</p>
-          <p className="small">Versão sem Firebase Storage: não precisa fazer upgrade pago para anexar fotos ao PDF.</p>
+          <h1>Gerador de Relatório de Serviço</h1>
+          <p>Preencha os dados, adicione fotos com legenda e gere um PDF profissional.</p>
         </div>
-        <div className="badge"><FileText size={20} /> PDF + Firestore</div>
-      </section>
-
-      <section className="card">
-        <h2>Dados principais</h2>
-        <div className="grid two">
-          <label>Cliente<input value={report.cliente} onChange={(e) => updateField("cliente", e.target.value)} placeholder="Ex.: Arachelle" /></label>
-          <label>Veículo<input value={report.veiculo} onChange={(e) => updateField("veiculo", e.target.value)} placeholder="Ex.: Fiat Argo" /></label>
-          <label>Data de recebimento<input type="date" value={report.dataRecebimento} onChange={(e) => updateField("dataRecebimento", e.target.value)} /></label>
-          <label>Data de entrega<input type="date" value={report.dataEntrega} onChange={(e) => updateField("dataEntrega", e.target.value)} /></label>
+        <div className="statusCard">
+          <strong>Firebase:</strong> {firebaseProjectId}<br />
+          <span>Storage desativado nesta versão</span>
         </div>
+      </header>
 
-        <label>Problema relatado pelo cliente<textarea value={report.problema} onChange={(e) => updateField("problema", e.target.value)} placeholder="Descreva o problema informado pelo cliente." /></label>
-        <label>Diagnóstico técnico<textarea value={report.diagnostico} onChange={(e) => updateField("diagnostico", e.target.value)} placeholder="Descreva o diagnóstico realizado." /></label>
-        <label>Serviços realizados<textarea value={report.servicos} onChange={(e) => updateField("servicos", e.target.value)} placeholder="Liste os serviços executados." /></label>
-      </section>
+      <main className="card">
+        <section className="section">
+          <h2><FileText size={20} /> Dados do relatório</h2>
+          <div className="grid two">
+            <label>Cliente<input value={form.cliente} onChange={e => updateForm('cliente', e.target.value)} placeholder="Nome do cliente" /></label>
+            <label>Veículo<input value={form.veiculo} onChange={e => updateForm('veiculo', e.target.value)} placeholder="Ex.: Fiat Argo" /></label>
+            <label>Placa<input value={form.placa} onChange={e => updateForm('placa', e.target.value)} placeholder="ABC1D23" /></label>
+            <label>KM<input value={form.km} onChange={e => updateForm('km', e.target.value)} placeholder="Ex.: 85.000" /></label>
+            <label>Data de recebimento<input type="date" value={form.dataRecebimento} onChange={e => updateForm('dataRecebimento', e.target.value)} /></label>
+            <label>Data de entrega<input type="date" value={form.dataEntrega} onChange={e => updateForm('dataEntrega', e.target.value)} /></label>
+          </div>
+        </section>
 
-      <section className="card">
-        <div className="section-title">
-          <h2>Orçamento / Custos</h2>
-          <button type="button" className="secondary" onClick={addItem}><Plus size={16} /> Adicionar item</button>
-        </div>
-        <div className="items">
-          {report.itens.map((item, index) => (
-            <div className="item-row" key={index}>
-              <input value={item.descricao} onChange={(e) => updateItem(index, "descricao", e.target.value)} placeholder="Descrição do item ou serviço" />
-              <input value={item.valor} onChange={(e) => updateItem(index, "valor", e.target.value)} placeholder="Valor" inputMode="decimal" />
-              <button type="button" className="icon danger" onClick={() => removeItem(index)} disabled={report.itens.length === 1}><Trash2 size={16} /></button>
+        <section className="section">
+          <h2>Descrição técnica</h2>
+          <label>Problema relatado pelo cliente<textarea value={form.problema} onChange={e => updateForm('problema', e.target.value)} placeholder="Descreva o problema informado pelo cliente" /></label>
+          <label>Diagnóstico técnico<textarea value={form.diagnostico} onChange={e => updateForm('diagnostico', e.target.value)} placeholder="Descreva o diagnóstico realizado" /></label>
+        </section>
+
+        <section className="section">
+          <div className="sectionHeader">
+            <h2>Serviços realizados</h2>
+            <button type="button" className="ghost" onClick={() => setServicos([...servicos, { descricao: '' }])}><Plus size={16} /> Adicionar</button>
+          </div>
+          {servicos.map((s, index) => (
+            <div className="row" key={index}>
+              <input value={s.descricao} onChange={e => setServicos(prev => prev.map((item, i) => i === index ? { descricao: e.target.value } : item))} placeholder="Ex.: Substituição do kit de embreagem" />
+              <button type="button" className="iconBtn" onClick={() => setServicos(prev => prev.filter((_, i) => i !== index))}><Trash2 size={16} /></button>
             </div>
           ))}
-        </div>
-        <div className="total">TOTAL: R$ {money(total)}</div>
-      </section>
+        </section>
 
-      <section className="card">
-        <h2>Registro Fotográfico</h2>
-        <label className="upload-box">
-          <Upload size={24} />
-          <span>Clique para selecionar fotos</span>
-          <input type="file" multiple accept="image/*" onChange={(e) => handleFotos(e.target.files)} />
-        </label>
+        <section className="section">
+          <div className="sectionHeader">
+            <h2>Orçamento / Custos</h2>
+            <button type="button" className="ghost" onClick={() => setCustos([...custos, { item: '', valor: '' }])}><Plus size={16} /> Adicionar</button>
+          </div>
+          {custos.map((c, index) => (
+            <div className="costRow" key={index}>
+              <input value={c.item} onChange={e => setCustos(prev => prev.map((item, i) => i === index ? { ...item, item: e.target.value } : item))} placeholder="Item" />
+              <input type="number" step="0.01" value={c.valor} onChange={e => setCustos(prev => prev.map((item, i) => i === index ? { ...item, valor: e.target.value } : item))} placeholder="Valor" />
+              <button type="button" className="iconBtn" onClick={() => setCustos(prev => prev.filter((_, i) => i !== index))}><Trash2 size={16} /></button>
+            </div>
+          ))}
+          <div className="total">Total: {moneyBR(total)}</div>
+        </section>
 
-        {fotos.length > 0 && (
-          <div className="photos-grid">
-            {fotos.map((foto) => (
-              <div className="photo-card" key={foto.id}>
-                <button type="button" className="remove-photo" onClick={() => removeFoto(foto.id)}><X size={16} /></button>
-                <img src={foto.dataUrl} alt={foto.nome} />
-                <input value={foto.legenda} onChange={(e) => updateLegenda(foto.id, e.target.value)} placeholder="Legenda da foto" />
+        <section className="section">
+          <h2><Camera size={20} /> Registro fotográfico</h2>
+          <label className="uploadBox">
+            <input type="file" accept="image/*" multiple onChange={handleFiles} />
+            Clique para adicionar fotos
+          </label>
+
+          <div className="photoGrid">
+            {fotos.map((foto, index) => (
+              <div className="photoCard" key={foto.id}>
+                <img src={foto.preview} alt={`Foto ${index + 1}`} />
+                <input value={foto.legenda} onChange={e => setFotos(prev => prev.map(f => f.id === foto.id ? { ...f, legenda: e.target.value } : f))} placeholder="Legenda da foto" />
+                <button type="button" className="deletePhoto" onClick={() => setFotos(prev => prev.filter(f => f.id !== foto.id))}>Remover</button>
               </div>
             ))}
           </div>
-        )}
-      </section>
+        </section>
 
-      <section className="actions card">
-        <button type="button" className="primary" onClick={salvarEGerarPDF} disabled={loading}><Save size={18} /> {loading ? "Salvando..." : "Salvar e gerar PDF"}</button>
-        <button type="button" className="secondary" onClick={gerarRascunho}><FileText size={18} /> Gerar rascunho</button>
-        <button type="button" className="secondary" onClick={limpar}>Limpar</button>
-        {msg && <div className={msg.startsWith("Erro") ? "message error" : "message success"}>{msg}</div>}
-      </section>
-    </main>
+        <section className="section">
+          <h2>Conclusão</h2>
+          <textarea value={form.conclusao} onChange={e => updateForm('conclusao', e.target.value)} />
+        </section>
+
+        <div className="actions">
+          <button type="button" className="primary" onClick={handleGenerate} disabled={loading}><Save size={18} /> {loading ? 'Gerando...' : 'Salvar e gerar PDF'}</button>
+          <button type="button" onClick={handleDraftPdf}><FileText size={18} /> Gerar rascunho</button>
+          <button type="button" onClick={clearAll}><RotateCcw size={18} /> Limpar</button>
+        </div>
+
+        {message && (
+          <div className={`message ${message.type}`}>
+            {message.type !== 'success' && <AlertTriangle size={18} />}
+            <span>{message.text}</span>
+          </div>
+        )}
+      </main>
+    </div>
   );
 }
 
-createRoot(document.getElementById("root")).render(<App />);
+createRoot(document.getElementById('root')).render(<App />);

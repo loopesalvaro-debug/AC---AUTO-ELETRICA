@@ -1,55 +1,47 @@
-# Gerador de Relatórios de Serviço - AC Auto Elétrica
+# Gerador de Relatórios - AC Auto Elétrica
 
-## Versão 6 - sem Firebase Storage
+Esta é a versão V7 antierro.
 
-Esta versão foi alterada para funcionar **sem Firebase Storage**, porque o Storage pediu upgrade do projeto.
+Ela foi feita para resolver o problema de Firebase Storage pedindo upgrade e erros travando o PDF.
 
-Agora o app usa apenas:
+## O que mudou nesta versão
 
-- React/Vite;
-- Firebase Firestore;
-- GitHub;
-- Vercel;
-- jsPDF para gerar o PDF com fotos e legendas.
-
-As fotos entram diretamente no PDF no navegador. Elas **não são enviadas para o Firebase Storage**.
-
-## O que foi corrigido
-
-- Removido todo uso de Firebase Storage;
-- Removidos imports de `getStorage`, `ref`, `uploadString` e `getDownloadURL`;
-- PDF continua gerando fotos com legenda;
-- Numeração automática continua como `001/2026`;
-- Firestore salva os dados do relatório e as legendas das fotos;
-- O app não precisa mais de upgrade pago para anexar fotos ao PDF.
-
-## Arquivos principais
-
-- `src/firebase.js` — configuração do Firebase;
-- `src/main.jsx` — tela do sistema e salvamento no Firestore;
-- `src/lib/pdf.js` — geração do PDF;
-- `src/style.css` — layout;
-- `firestore.rules` — regras para liberar o Firestore em teste;
-- `storage.rules` — apenas aviso, não precisa usar.
+- NÃO usa Firebase Storage.
+- NÃO usa variáveis de ambiente da Vercel.
+- Firebase está configurado direto em `src/firebase.js`.
+- O PDF é gerado no navegador, mesmo que o Firebase falhe.
+- As fotos entram diretamente no PDF.
+- As legendas aparecem abaixo das fotos.
+- A numeração automática tenta usar o Firestore.
+- Se o Firestore falhar, o app usa numeração local no navegador e mesmo assim gera o PDF.
 
 ## Como subir no GitHub
 
-1. Baixe e extraia o ZIP.
-2. Apague os arquivos antigos do seu repositório, ou substitua todos por estes arquivos novos.
-3. Envie tudo para o GitHub.
-4. Aguarde a Vercel fazer o deploy automaticamente.
+1. Baixe e extraia este ZIP.
+2. No GitHub, abra o repositório do app.
+3. Apague os arquivos antigos, principalmente a pasta `src` antiga.
+4. Envie TODOS os arquivos desta pasta.
+5. Faça commit.
+6. Aguarde a Vercel fazer deploy.
 
-## Configuração do Firestore
+## Muito importante
 
-No Firebase Console, abra o projeto `AC - Auto Eletrica`.
+Se a Vercel parecer não atualizar:
 
-Vá em:
+1. Entre na Vercel.
+2. Abra o projeto.
+3. Vá em Deployments.
+4. Clique nos três pontinhos do último deploy.
+5. Clique em Redeploy.
+6. Se aparecer opção, marque para não usar cache.
 
-```txt
-Firestore Database > Regras
-```
+## Regras do Firestore
 
-Apague tudo e cole:
+No Firebase Console:
+
+Firestore Database → Regras
+
+Cole:
 
 ```js
 rules_version = '2';
@@ -67,29 +59,18 @@ service cloud.firestore {
 }
 ```
 
-Clique em **Publicar**.
+Clique em Publicar.
 
-## Não precisa ativar Storage
+## Storage
 
-Nesta versão, não clique em upgrade do Storage.
+Não ative Storage.
+Não pague upgrade.
+Esta versão não usa Storage.
 
-O app não usa Storage.
+## Teste rápido
 
-## Teste local opcional
+1. Abra o app.
+2. Preencha cliente, veículo e pelo menos uma foto.
+3. Clique em Salvar e gerar PDF.
+4. O PDF deve baixar mesmo que o Firebase esteja com erro.
 
-```bash
-npm install
-npm run dev
-```
-
-## Teste na Vercel
-
-Depois do deploy:
-
-1. Abra o link da Vercel;
-2. Preencha cliente e veículo;
-3. Adicione itens;
-4. Adicione fotos e legendas;
-5. Clique em **Salvar e gerar PDF**.
-
-Se aparecer erro de permissão, confira somente as regras do Firestore.
