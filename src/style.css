@@ -1,0 +1,112 @@
+:root {
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #172033;
+  background: #eef3f8;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; }
+
+button, input, textarea { font: inherit; }
+
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 32px 18px 60px;
+}
+
+.hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: center;
+  margin-bottom: 22px;
+  background: linear-gradient(135deg, #101827, #253045);
+  color: white;
+  border-radius: 28px;
+  padding: 30px;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.18);
+}
+
+.hero h1 { margin: 4px 0 8px; font-size: clamp(28px, 4vw, 44px); line-height: 1; }
+.hero p { margin: 0; color: #d8e2ee; max-width: 640px; }
+.eyebrow { text-transform: uppercase; letter-spacing: .12em; font-weight: 700; font-size: 12px; color: #80d7ff !important; }
+.badge { display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.18); padding: 12px 14px; border-radius: 999px; white-space: nowrap; }
+
+.card {
+  background: white;
+  border: 1px solid #dbe5ef;
+  border-radius: 22px;
+  padding: 22px;
+  margin-bottom: 18px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+}
+
+.card h2 { margin: 0 0 18px; font-size: 21px; }
+.grid { display: grid; gap: 14px; }
+.grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+.field { display: grid; gap: 7px; margin-bottom: 14px; }
+.field span { font-weight: 700; font-size: 14px; color: #334155; }
+input, textarea {
+  width: 100%;
+  border: 1px solid #cfdbe8;
+  border-radius: 14px;
+  padding: 12px 13px;
+  background: #fbfdff;
+  outline: none;
+  color: #172033;
+}
+input:focus, textarea:focus { border-color: #0ea5e9; box-shadow: 0 0 0 4px rgba(14, 165, 233, .12); }
+textarea { min-height: 105px; resize: vertical; }
+
+.sectionHeader { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
+.sectionHeader h2 { margin: 0; }
+
+button, .uploadButton {
+  border: none;
+  border-radius: 14px;
+  padding: 12px 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: .16s ease;
+  font-weight: 700;
+}
+button:disabled { opacity: .55; cursor: not-allowed; }
+.primary { background: #111827; color: white; }
+.primary:hover:not(:disabled) { transform: translateY(-1px); background: #020617; }
+.secondary, .uploadButton { background: white; color: #172033; border: 1px solid #cfdbe8; }
+.secondary:hover, .uploadButton:hover { border-color: #0ea5e9; }
+.icon { padding: 10px; border: 1px solid #cfdbe8; background: white; }
+.danger { color: #dc2626; }
+
+.items { display: grid; gap: 10px; }
+.itemRow { display: grid; grid-template-columns: 1fr 150px 44px; gap: 10px; }
+.money { text-align: right; }
+.total { margin-top: 14px; text-align: right; font-size: 20px; }
+
+.empty { border: 1px dashed #b8c7d8; border-radius: 18px; padding: 22px; text-align: center; color: #64748b; background: #f8fbff; }
+.photoGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.photoCard { border: 1px solid #dbe5ef; border-radius: 18px; overflow: hidden; background: #f8fbff; position: relative; }
+.photoCard img { width: 100%; height: 210px; display: block; object-fit: cover; }
+.photoCard input { border-radius: 0; border-left: 0; border-right: 0; border-bottom: 0; background: white; }
+.removePhoto { position: absolute; top: 8px; right: 8px; padding: 8px; background: rgba(15, 23, 42, .84); color: white; border-radius: 999px; }
+
+.actions { display: flex; gap: 12px; flex-wrap: wrap; margin: 22px 0; }
+.status { border-radius: 16px; padding: 15px 17px; margin-bottom: 18px; border: 1px solid; }
+.status.info { background: #eff6ff; border-color: #93c5fd; color: #1e40af; }
+.status.success { background: #ecfdf5; border-color: #86efac; color: #166534; }
+.status.error { background: #fff1f2; border-color: #fda4af; color: #9f1239; }
+.help p { color: #475569; line-height: 1.6; }
+code { background: #eef3f8; padding: 2px 6px; border-radius: 6px; }
+
+@media (max-width: 820px) {
+  .hero { flex-direction: column; align-items: flex-start; }
+  .grid.two, .photoGrid { grid-template-columns: 1fr; }
+  .itemRow { grid-template-columns: 1fr; }
+  .money { text-align: left; }
+  .sectionHeader { align-items: flex-start; flex-direction: column; }
+}

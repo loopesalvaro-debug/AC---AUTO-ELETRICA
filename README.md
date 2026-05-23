@@ -1,137 +1,110 @@
-# App de Relatórios de Serviço
+# Gerador de Relatórios de Serviço - AC Auto Elétrica
 
-## O que esta versão corrige
+Aplicativo React/Vite com Firebase para gerar relatórios de serviço com:
 
-- Corrige o corte das fotos entre páginas no PDF.
-- Gera PDF com `jsPDF`, sem depender de captura HTML quebrando páginas.
-- Salva o relatório no Firestore.
-- Salva as fotos no Firebase Storage.
-- Gera numeração automática no formato `001/2026`.
-- Permite legenda individual nas fotos.
-- Se o Firebase falhar, o app mostra erro mais claro no console do navegador.
+- Numeração automática, exemplo `001/2026`;
+- Cadastro de cliente, veículo, problema, diagnóstico e serviços;
+- Orçamento com total automático;
+- Upload de fotos com legenda individual;
+- Salvamento no Firebase Firestore;
+- Upload das fotos no Firebase Storage;
+- Geração automática de PDF pelo botão **Salvar e gerar PDF**.
 
----
+## 1. Subir no GitHub
 
-## 1. Substituir arquivos no GitHub
+1. Extraia este ZIP.
+2. Abra a pasta do projeto.
+3. Envie todos os arquivos para um repositório no GitHub.
 
-No seu projeto atual, substitua/adiciona estes arquivos:
+## 2. Configurar o Firebase
 
-```txt
-package.json
-index.html
-.env.example
-firestore.rules
-storage.rules
-src/main.jsx
-src/App.jsx
-src/firebase.js
-src/pdfGenerator.js
-src/styles.css
+O arquivo `src/firebase.js` já está com os dados enviados:
+
+```js
+projectId: "ac---auto-eletrica"
+storageBucket: "ac---auto-eletrica.firebasestorage.app"
 ```
-
-Depois envie para o GitHub.
-
----
-
-## 2. Configurar Firebase no projeto
-
-No Firebase Console:
-
-1. Entre no seu projeto.
-2. Vá em **Configurações do projeto**.
-3. Role até **Seus apps**.
-4. Clique no app Web `</>`.
-5. Copie o objeto `firebaseConfig`.
-
-Agora crie um arquivo `.env` na raiz do projeto com este modelo:
-
-```env
-VITE_FIREBASE_API_KEY=SUA_API_KEY
-VITE_FIREBASE_AUTH_DOMAIN=SEU_PROJETO.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=SEU_PROJECT_ID
-VITE_FIREBASE_STORAGE_BUCKET=SEU_PROJETO.appspot.com
-VITE_FIREBASE_MESSAGING_SENDER_ID=SEU_SENDER_ID
-VITE_FIREBASE_APP_ID=SEU_APP_ID
-```
-
-Importante: no campo `VITE_FIREBASE_STORAGE_BUCKET`, use exatamente o bucket informado pelo Firebase.
-Pode ser `.appspot.com` ou `.firebasestorage.app`, dependendo do projeto.
-
----
 
 ## 3. Ativar Firestore
 
-No Firebase:
-
-1. Vá em **Firestore Database**.
-2. Clique em **Criar banco de dados**.
-3. Escolha **modo de teste** para começar.
-4. Escolha a região.
-5. Conclua.
-
-Depois vá em **Regras** e cole o conteúdo do arquivo `firestore.rules`.
-Publique.
-
----
+1. Entre no Firebase Console.
+2. Abra o projeto `ac---auto-eletrica`.
+3. Vá em **Firestore Database**.
+4. Clique em **Criar banco de dados**.
+5. Escolha **Modo de teste**.
+6. Escolha a região e finalize.
 
 ## 4. Ativar Storage
 
-No Firebase:
+1. No Firebase Console, vá em **Storage**.
+2. Clique em **Começar**.
+3. Escolha **Modo de teste**.
+4. Finalize.
+
+## 5. Publicar as regras de teste
+
+### Firestore
+
+No Firebase Console:
+
+1. Vá em **Firestore Database**.
+2. Clique em **Regras**.
+3. Cole o conteúdo do arquivo `firestore.rules`.
+4. Clique em **Publicar**.
+
+### Storage
+
+No Firebase Console:
 
 1. Vá em **Storage**.
-2. Clique em **Começar**.
-3. Escolha **modo de teste**.
-4. Conclua.
+2. Clique em **Regras**.
+3. Cole o conteúdo do arquivo `storage.rules`.
+4. Clique em **Publicar**.
 
-Depois vá em **Regras** e cole o conteúdo do arquivo `storage.rules`.
-Publique.
+> Atenção: as regras deste projeto estão abertas para facilitar o teste inicial. Para produção, o ideal é adicionar login e regras por usuário.
 
----
+## 6. Rodar localmente
 
-## 5. Rodar localmente
-
-No terminal, dentro da pasta do projeto:
+Instale o Node.js e rode:
 
 ```bash
 npm install
 npm run dev
 ```
 
-Abra o link que aparecer, normalmente:
+Acesse o link que aparecer no terminal.
 
-```txt
-http://localhost:5173
-```
+## 7. Publicar na Vercel
 
----
+1. Entre na Vercel.
+2. Clique em **Add New Project**.
+3. Escolha o repositório do GitHub.
+4. Framework: **Vite**.
+5. Build Command: `npm run build`.
+6. Output Directory: `dist`.
+7. Clique em **Deploy**.
 
-## 6. Publicar na Vercel
+## 8. Como usar
 
-1. Entre em https://vercel.com
-2. Importe o repositório do GitHub.
-3. Em **Environment Variables**, cadastre as mesmas variáveis do `.env`:
+1. Preencha os dados do relatório.
+2. Adicione itens do orçamento.
+3. Adicione fotos e escreva uma legenda para cada uma.
+4. Clique em **Salvar e gerar PDF**.
+5. O sistema cria um número automático, salva no Firebase e baixa o PDF.
 
-```txt
-VITE_FIREBASE_API_KEY
-VITE_FIREBASE_AUTH_DOMAIN
-VITE_FIREBASE_PROJECT_ID
-VITE_FIREBASE_STORAGE_BUCKET
-VITE_FIREBASE_MESSAGING_SENDER_ID
-VITE_FIREBASE_APP_ID
-```
+## 9. Erros comuns
 
-4. Clique em **Deploy**.
+### `permission-denied`
 
----
+Geralmente é regra do Firestore ou Storage. Publique novamente os arquivos:
 
-## 7. Se aparecer erro ao salvar
+- `firestore.rules`
+- `storage.rules`
 
-Abra o navegador e pressione `F12` → aba **Console**.
-Os erros mais comuns são:
+### `projects/undefined`
 
-- Firestore não ativado.
-- Storage não ativado.
-- Regras bloqueando escrita.
-- Variáveis `VITE_FIREBASE_*` faltando na Vercel.
-- Bucket do Storage escrito errado.
+Este projeto já está corrigido com Firebase fixo em `src/firebase.js`. Se esse erro aparecer, confira se o GitHub recebeu o arquivo atualizado.
 
+### Storage não inicia
+
+Confirme se o Firebase Storage foi ativado no Console.

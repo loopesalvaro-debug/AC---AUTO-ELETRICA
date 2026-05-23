@@ -1,7 +1,9 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    match /relatorios/{allPaths=**} {
+    // MODO TESTE: permite upload e leitura das fotos sem login.
+    // Para produção, troque por regras com Authentication.
+    match /{allPaths=**} {
       allow read, write: if true;
     }
   }
