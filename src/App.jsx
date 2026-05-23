@@ -1,177 +1,193 @@
-import React, { useMemo, useState } from 'react';
-import { FileDown, Plus, Trash2, Save } from 'lucide-react';
-import ReportPreview from './components/ReportPreview';
-import { salvarRelatorio } from './firebase/relatorios';
-import { gerarPDF } from './utils/pdf';
-import './styles/app.css';
+import React, { useMemo, useState } from "react";
+import { Save, FileDown, Trash2, Plus, ImagePlus } from "lucide-react";
+import { db, storage } from "./firebase";
+import { doc, runTransaction, collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { gerarPDF } from "./pdfGenerator";
 
-const dadosIniciais = {
-  codigo: '',
-  cliente: '',
-  veiculo: '',
-  dataRecebimento: '',
-  dataEntrega: '',
-  problema: '',
-  diagnostico: '',
-  servicos: [''],
-  itens: [{ descricao: '', valor: '' }],
+const anoAtual = new Date().getFullYear();
+
+const vazio = {
+  cliente: "",
+  veiculo: "",
+  dataRecebimento: "",
+  dataEntrega: "",
+  problema: "",
+  diagnostico: "",
+  servicos: "",
+  itens: [{ nome: "", valor: "" }],
 };
 
+async function gerarNumeroRelatorio() {
+  const counterRef = doc(db, "counters", String(anoAtual));
+  return await runTransaction(db, async (transaction) => {
+    const snap = await transaction.get(counterRef);
+    const atual = snap.exists() ? snap.data().ultimoNumero || 0 : 0;
+    const proximo = atual + 1;
+    transaction.set(counterRef, { ultimoNumero: proximo, ano: anoAtual }, { merge: true });
+    return `${String(proximo).padStart(3, "0")}/${anoAtual}`;
+  });
+}
+
 export default function App() {
-  const [dados, setDados] = useState(dadosIniciais);
+  const [form, setForm] = useState(vazio);
   const [fotos, setFotos] = useState([]);
+  const [status, setStatus] = useState("");
+  const [erro, setErro] = useState("");
   const [salvando, setSalvando] = useState(false);
-  const [mensagem, setMensagem] = useState('');
 
-  const fotosPreview = useMemo(() => fotos.map((foto) => ({
-    url: URL.createObjectURL(foto.file),
-    legenda: foto.legenda || '',
-    nome: foto.file.name,
-  })), [fotos]);
+  const total = useMemo(() => {
+    return form.itens.reduce((acc, item) => acc + Number(String(item.valor).replace(",", ".") || 0), 0);
+  }, [form.itens]);
 
-  function alterarCampo(campo, valor) {
-    setDados((atual) => ({ ...atual, [campo]: valor }));
-  }
-
-  function alterarServico(index, valor) {
-    const servicos = [...dados.servicos];
-    servicos[index] = valor;
-    alterarCampo('servicos', servicos);
-  }
-
-  function adicionarServico() {
-    alterarCampo('servicos', [...dados.servicos, '']);
-  }
-
-  function removerServico(index) {
-    alterarCampo('servicos', dados.servicos.filter((_, i) => i !== index));
+  function alterar(campo, valor) {
+    setForm((old) => ({ ...old, [campo]: valor }));
   }
 
   function alterarItem(index, campo, valor) {
-    const itens = [...dados.itens];
+    const itens = [...form.itens];
     itens[index] = { ...itens[index], [campo]: valor };
-    alterarCampo('itens', itens);
+    setForm((old) => ({ ...old, itens }));
   }
 
   function adicionarItem() {
-    alterarCampo('itens', [...dados.itens, { descricao: '', valor: '' }]);
+    setForm((old) => ({ ...old, itens: [...old.itens, { nome: "", valor: "" }] }));
   }
 
   function removerItem(index) {
-    alterarCampo('itens', dados.itens.filter((_, i) => i !== index));
+    setForm((old) => ({ ...old, itens: old.itens.filter((_, i) => i !== index) }));
   }
 
-  function selecionarFotos(arquivos) {
-    const novasFotos = Array.from(arquivos || []).map((file) => ({ file, legenda: '' }));
-    setFotos(novasFotos);
+  function selecionarFotos(e) {
+    const arquivos = Array.from(e.target.files || []);
+    const novas = arquivos.map((file) => ({
+      id: crypto.randomUUID(),
+      file,
+      preview: URL.createObjectURL(file),
+      legenda: "",
+    }));
+    setFotos((old) => [...old, ...novas]);
   }
 
-  function alterarLegendaFoto(index, legenda) {
-    setFotos((atuais) => atuais.map((foto, i) => i === index ? { ...foto, legenda } : foto));
+  function alterarLegenda(id, legenda) {
+    setFotos((old) => old.map((foto) => (foto.id === id ? { ...foto, legenda } : foto)));
   }
 
-  function removerFoto(index) {
-    setFotos((atuais) => atuais.filter((_, i) => i !== index));
+  function removerFoto(id) {
+    setFotos((old) => old.filter((foto) => foto.id !== id));
   }
 
   async function salvarEGerarPDF() {
+    setSalvando(true);
+    setErro("");
+    setStatus("Gerando número do relatório...");
     try {
-      setSalvando(true);
-      setMensagem('Salvando relatório no Firebase...');
-      const relatorioSalvo = await salvarRelatorio(dados, fotos);
-      const dadosComCodigo = { ...dados, codigo: relatorioSalvo.codigo };
-      setDados(dadosComCodigo);
-      setMensagem(`Relatório ${relatorioSalvo.codigo} salvo. Gerando PDF...`);
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      await gerarPDF('relatorio-pdf', `Relatorio-${relatorioSalvo.codigo.replace('/', '-')}.pdf`);
-      setMensagem(`PDF gerado com sucesso: ${relatorioSalvo.codigo}`);
+      const numero = await gerarNumeroRelatorio();
+      const relatorio = { ...form, total, numero };
+
+      setStatus("Gerando PDF...");
+      await gerarPDF(relatorio, fotos, true);
+
+      setStatus("Enviando fotos para o Firebase...");
+      const fotosSalvas = [];
+      for (const foto of fotos) {
+        const caminho = `relatorios/${anoAtual}/${numero.replace("/", "-")}/${foto.id}-${foto.file.name}`;
+        const storageRef = ref(storage, caminho);
+        await uploadBytes(storageRef, foto.file);
+        const url = await getDownloadURL(storageRef);
+        fotosSalvas.push({ url, legenda: foto.legenda, nome: foto.file.name, caminho });
+      }
+
+      setStatus("Salvando relatório no Firestore...");
+      await addDoc(collection(db, "relatorios"), {
+        ...relatorio,
+        fotos: fotosSalvas,
+        criadoEm: serverTimestamp(),
+      });
+
+      setStatus(`Relatório ${numero} salvo e PDF gerado com sucesso.`);
     } catch (error) {
-      console.error(error);
-      setMensagem('Erro ao salvar ou gerar PDF. Verifique Firebase, regras e internet.');
+      console.error("Erro completo ao salvar/gerar PDF:", error);
+      setErro(`Erro: ${error.code || "sem-codigo"} - ${error.message || error}`);
+      setStatus("");
     } finally {
       setSalvando(false);
     }
   }
 
-  function limparFormulario() {
-    setDados(dadosIniciais);
+  async function gerarRascunho() {
+    setErro("");
+    try {
+      await gerarPDF({ ...form, total, numero: `RASCUNHO/${anoAtual}` }, fotos, true);
+    } catch (error) {
+      console.error(error);
+      setErro(`Erro ao gerar rascunho: ${error.message || error}`);
+    }
+  }
+
+  function limpar() {
+    setForm(vazio);
     setFotos([]);
-    setMensagem('');
+    setStatus("");
+    setErro("");
   }
 
   return (
-    <main className="app">
-      <header className="topbar">
-        <div>
-          <h1>Gerador de Relatórios de Serviço</h1>
-          <p>Preencha o formulário, salve no Firebase e gere o PDF automaticamente.</p>
+    <main className="page">
+      <section className="card">
+        <div className="topbar">
+          <div>
+            <h1>Relatórios de Serviço</h1>
+            <p>Gere relatórios técnicos com fotos, legendas, orçamento e PDF.</p>
+          </div>
+          <span className="badge">Numeração automática: 001/{anoAtual}</span>
         </div>
-      </header>
 
-      <div className="layout">
-        <form className="card form" onSubmit={(e) => e.preventDefault()}>
-          <h2>Dados do relatório</h2>
-          <div className="grid two">
-            <label>Cliente<input value={dados.cliente} onChange={(e) => alterarCampo('cliente', e.target.value)} /></label>
-            <label>Veículo / Equipamento<input value={dados.veiculo} onChange={(e) => alterarCampo('veiculo', e.target.value)} /></label>
-            <label>Data de recebimento<input type="date" value={dados.dataRecebimento} onChange={(e) => alterarCampo('dataRecebimento', e.target.value)} /></label>
-            <label>Data de entrega<input type="date" value={dados.dataEntrega} onChange={(e) => alterarCampo('dataEntrega', e.target.value)} /></label>
-          </div>
+        <div className="grid two">
+          <label>Cliente<input value={form.cliente} onChange={(e) => alterar("cliente", e.target.value)} /></label>
+          <label>Veículo<input value={form.veiculo} onChange={(e) => alterar("veiculo", e.target.value)} /></label>
+          <label>Data de recebimento<input type="date" value={form.dataRecebimento} onChange={(e) => alterar("dataRecebimento", e.target.value)} /></label>
+          <label>Data de entrega<input type="date" value={form.dataEntrega} onChange={(e) => alterar("dataEntrega", e.target.value)} /></label>
+        </div>
 
-          <label>Problema relatado<textarea value={dados.problema} onChange={(e) => alterarCampo('problema', e.target.value)} /></label>
-          <label>Diagnóstico técnico<textarea value={dados.diagnostico} onChange={(e) => alterarCampo('diagnostico', e.target.value)} /></label>
+        <label>Problema relatado pelo cliente<textarea value={form.problema} onChange={(e) => alterar("problema", e.target.value)} /></label>
+        <label>Diagnóstico técnico<textarea value={form.diagnostico} onChange={(e) => alterar("diagnostico", e.target.value)} /></label>
+        <label>Serviços realizados<textarea placeholder="Digite um serviço por linha" value={form.servicos} onChange={(e) => alterar("servicos", e.target.value)} /></label>
 
-          <div className="section-title"><h3>Serviços realizados</h3><button type="button" onClick={adicionarServico}><Plus size={16} /> Adicionar</button></div>
-          {dados.servicos.map((servico, index) => (
-            <div className="row" key={index}>
-              <input value={servico} onChange={(e) => alterarServico(index, e.target.value)} placeholder="Ex: Substituição do kit de embreagem" />
-              <button type="button" className="icon" onClick={() => removerServico(index)}><Trash2 size={16} /></button>
+        <h2>Orçamento / Custos</h2>
+        <div className="itens">
+          {form.itens.map((item, index) => (
+            <div className="item" key={index}>
+              <input placeholder="Item" value={item.nome} onChange={(e) => alterarItem(index, "nome", e.target.value)} />
+              <input placeholder="Valor" type="number" step="0.01" value={item.valor} onChange={(e) => alterarItem(index, "valor", e.target.value)} />
+              <button className="icon" onClick={() => removerItem(index)} type="button"><Trash2 size={18} /></button>
             </div>
           ))}
+        </div>
+        <button className="secondary" onClick={adicionarItem} type="button"><Plus size={18} /> Adicionar item</button>
+        <div className="total">Total: R$ {total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</div>
 
-          <div className="section-title"><h3>Orçamento / Custos</h3><button type="button" onClick={adicionarItem}><Plus size={16} /> Adicionar</button></div>
-          {dados.itens.map((item, index) => (
-            <div className="row cost" key={index}>
-              <input value={item.descricao} onChange={(e) => alterarItem(index, 'descricao', e.target.value)} placeholder="Item" />
-              <input type="number" step="0.01" value={item.valor} onChange={(e) => alterarItem(index, 'valor', e.target.value)} placeholder="Valor" />
-              <button type="button" className="icon" onClick={() => removerItem(index)}><Trash2 size={16} /></button>
+        <h2>Registro Fotográfico</h2>
+        <label className="upload"><ImagePlus size={20} /> Adicionar fotos<input type="file" accept="image/*" multiple onChange={selecionarFotos} /></label>
+        <div className="fotos">
+          {fotos.map((foto) => (
+            <div className="foto" key={foto.id}>
+              <img src={foto.preview} alt="Prévia" />
+              <input placeholder="Legenda da foto" value={foto.legenda} onChange={(e) => alterarLegenda(foto.id, e.target.value)} />
+              <button className="danger" type="button" onClick={() => removerFoto(foto.id)}>Remover</button>
             </div>
           ))}
+        </div>
 
-          <label>Registro fotográfico<input type="file" multiple accept="image/*" onChange={(e) => selecionarFotos(e.target.files)} /></label>
+        <div className="actions">
+          <button className="primary" disabled={salvando} onClick={salvarEGerarPDF} type="button"><Save size={19} /> {salvando ? "Processando..." : "Salvar e gerar PDF"}</button>
+          <button className="secondary" onClick={gerarRascunho} type="button"><FileDown size={19} /> Gerar rascunho</button>
+          <button className="secondary" onClick={limpar} type="button">Limpar</button>
+        </div>
 
-          {fotos.length > 0 && (
-            <div className="photo-caption-list">
-              <h3>Legendas das fotos</h3>
-              {fotos.map((foto, index) => (
-                <div className="photo-caption-card" key={`${foto.file.name}-${index}`}>
-                  <div className="photo-caption-info">
-                    <img src={URL.createObjectURL(foto.file)} alt={`Prévia ${index + 1}`} />
-                    <span>Foto {index + 1}: {foto.file.name}</span>
-                  </div>
-                  <input
-                    value={foto.legenda}
-                    onChange={(e) => alterarLegendaFoto(index, e.target.value)}
-                    placeholder="Legenda da foto. Ex: Platô da embreagem com desgaste"
-                  />
-                  <button type="button" className="icon" onClick={() => removerFoto(index)}><Trash2 size={16} /> Remover</button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div className="actions">
-            <button type="button" className="primary" disabled={salvando} onClick={salvarEGerarPDF}><Save size={18} /> Salvar e gerar PDF</button>
-            <button type="button" onClick={() => gerarPDF('relatorio-pdf', 'Relatorio-rascunho.pdf')}><FileDown size={18} /> Gerar rascunho</button>
-            <button type="button" onClick={limparFormulario}>Limpar</button>
-          </div>
-          {mensagem && <p className="message">{mensagem}</p>}
-        </form>
-
-        <aside className="preview-wrap">
-          <ReportPreview dados={dados} fotosPreview={fotosPreview} />
-        </aside>
-      </div>
+        {status && <div className="notice ok">{status}</div>}
+        {erro && <div className="notice error">{erro}</div>}
+      </section>
     </main>
   );
 }
