@@ -1,110 +1,95 @@
 # Gerador de Relatórios de Serviço - AC Auto Elétrica
 
-Aplicativo React/Vite com Firebase para gerar relatórios de serviço com:
+## Versão 6 - sem Firebase Storage
 
-- Numeração automática, exemplo `001/2026`;
-- Cadastro de cliente, veículo, problema, diagnóstico e serviços;
-- Orçamento com total automático;
-- Upload de fotos com legenda individual;
-- Salvamento no Firebase Firestore;
-- Upload das fotos no Firebase Storage;
-- Geração automática de PDF pelo botão **Salvar e gerar PDF**.
+Esta versão foi alterada para funcionar **sem Firebase Storage**, porque o Storage pediu upgrade do projeto.
 
-## 1. Subir no GitHub
+Agora o app usa apenas:
 
-1. Extraia este ZIP.
-2. Abra a pasta do projeto.
-3. Envie todos os arquivos para um repositório no GitHub.
+- React/Vite;
+- Firebase Firestore;
+- GitHub;
+- Vercel;
+- jsPDF para gerar o PDF com fotos e legendas.
 
-## 2. Configurar o Firebase
+As fotos entram diretamente no PDF no navegador. Elas **não são enviadas para o Firebase Storage**.
 
-O arquivo `src/firebase.js` já está com os dados enviados:
+## O que foi corrigido
 
-```js
-projectId: "ac---auto-eletrica"
-storageBucket: "ac---auto-eletrica.firebasestorage.app"
+- Removido todo uso de Firebase Storage;
+- Removidos imports de `getStorage`, `ref`, `uploadString` e `getDownloadURL`;
+- PDF continua gerando fotos com legenda;
+- Numeração automática continua como `001/2026`;
+- Firestore salva os dados do relatório e as legendas das fotos;
+- O app não precisa mais de upgrade pago para anexar fotos ao PDF.
+
+## Arquivos principais
+
+- `src/firebase.js` — configuração do Firebase;
+- `src/main.jsx` — tela do sistema e salvamento no Firestore;
+- `src/lib/pdf.js` — geração do PDF;
+- `src/style.css` — layout;
+- `firestore.rules` — regras para liberar o Firestore em teste;
+- `storage.rules` — apenas aviso, não precisa usar.
+
+## Como subir no GitHub
+
+1. Baixe e extraia o ZIP.
+2. Apague os arquivos antigos do seu repositório, ou substitua todos por estes arquivos novos.
+3. Envie tudo para o GitHub.
+4. Aguarde a Vercel fazer o deploy automaticamente.
+
+## Configuração do Firestore
+
+No Firebase Console, abra o projeto `AC - Auto Eletrica`.
+
+Vá em:
+
+```txt
+Firestore Database > Regras
 ```
 
-## 3. Ativar Firestore
+Apague tudo e cole:
 
-1. Entre no Firebase Console.
-2. Abra o projeto `ac---auto-eletrica`.
-3. Vá em **Firestore Database**.
-4. Clique em **Criar banco de dados**.
-5. Escolha **Modo de teste**.
-6. Escolha a região e finalize.
+```js
+rules_version = '2';
 
-## 4. Ativar Storage
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /relatorios/{document=**} {
+      allow read, write: if true;
+    }
 
-1. No Firebase Console, vá em **Storage**.
-2. Clique em **Começar**.
-3. Escolha **Modo de teste**.
-4. Finalize.
+    match /contadores/{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
+```
 
-## 5. Publicar as regras de teste
+Clique em **Publicar**.
 
-### Firestore
+## Não precisa ativar Storage
 
-No Firebase Console:
+Nesta versão, não clique em upgrade do Storage.
 
-1. Vá em **Firestore Database**.
-2. Clique em **Regras**.
-3. Cole o conteúdo do arquivo `firestore.rules`.
-4. Clique em **Publicar**.
+O app não usa Storage.
 
-### Storage
-
-No Firebase Console:
-
-1. Vá em **Storage**.
-2. Clique em **Regras**.
-3. Cole o conteúdo do arquivo `storage.rules`.
-4. Clique em **Publicar**.
-
-> Atenção: as regras deste projeto estão abertas para facilitar o teste inicial. Para produção, o ideal é adicionar login e regras por usuário.
-
-## 6. Rodar localmente
-
-Instale o Node.js e rode:
+## Teste local opcional
 
 ```bash
 npm install
 npm run dev
 ```
 
-Acesse o link que aparecer no terminal.
+## Teste na Vercel
 
-## 7. Publicar na Vercel
+Depois do deploy:
 
-1. Entre na Vercel.
-2. Clique em **Add New Project**.
-3. Escolha o repositório do GitHub.
-4. Framework: **Vite**.
-5. Build Command: `npm run build`.
-6. Output Directory: `dist`.
-7. Clique em **Deploy**.
+1. Abra o link da Vercel;
+2. Preencha cliente e veículo;
+3. Adicione itens;
+4. Adicione fotos e legendas;
+5. Clique em **Salvar e gerar PDF**.
 
-## 8. Como usar
-
-1. Preencha os dados do relatório.
-2. Adicione itens do orçamento.
-3. Adicione fotos e escreva uma legenda para cada uma.
-4. Clique em **Salvar e gerar PDF**.
-5. O sistema cria um número automático, salva no Firebase e baixa o PDF.
-
-## 9. Erros comuns
-
-### `permission-denied`
-
-Geralmente é regra do Firestore ou Storage. Publique novamente os arquivos:
-
-- `firestore.rules`
-- `storage.rules`
-
-### `projects/undefined`
-
-Este projeto já está corrigido com Firebase fixo em `src/firebase.js`. Se esse erro aparecer, confira se o GitHub recebeu o arquivo atualizado.
-
-### Storage não inicia
-
-Confirme se o Firebase Storage foi ativado no Console.
+Se aparecer erro de permissão, confira somente as regras do Firestore.

@@ -1,15 +1,12 @@
 import jsPDF from "jspdf";
 
 export function money(value) {
-  const number = Number(value || 0);
-  return number.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const n = Number(String(value ?? "0").replace(",", ".")) || 0;
+  return n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export function formatDateBR(value) {
-  if (!value) return "";
-  const [year, month, day] = value.split("-");
-  if (!year || !month || !day) return value;
-  return `${day}/${month}/${year}`;
+export function parseMoney(value) {
+  return Number(String(value ?? "0").replace(",", ".")) || 0;
 }
 
 export function readFileAsDataURL(file) {
@@ -21,33 +18,36 @@ export function readFileAsDataURL(file) {
   });
 }
 
-function splitText(doc, text, maxWidth) {
-  return doc.splitTextToSize(String(text || ""), maxWidth);
+function formatDateBR(value) {
+  if (!value) return "";
+  const [y, m, d] = value.split("-");
+  if (!y || !m || !d) return value;
+  return `${d}/${m}/${y}`;
 }
 
-function addWrappedText(doc, label, text, x, y, width) {
+function splitLines(doc, text, maxWidth) {
+  return doc.splitTextToSize(String(text || "-"), maxWidth);
+}
+
+function addWrappedText(doc, label, value, x, y, maxWidth) {
   doc.setFont("helvetica", "bold");
   doc.text(label, x, y);
   doc.setFont("helvetica", "normal");
-  const lines = splitText(doc, text || "-", width);
+  const lines = splitLines(doc, value, maxWidth);
   doc.text(lines, x, y + 6);
   return y + 8 + lines.length * 5;
 }
 
-function ensureSpace(doc, y, needed = 35) {
-  if (y + needed > 285) {
+function ensurePage(doc, y, margin = 14) {
+  const pageHeight = doc.internal.pageSize.getHeight();
+  if (y > pageHeight - margin) {
     doc.addPage();
     return 18;
   }
   return y;
 }
 
-function getImageSizeFit(imgWidth, imgHeight, maxWidth, maxHeight) {
-  const ratio = Math.min(maxWidth / imgWidth, maxHeight / imgHeight);
-  return { width: imgWidth * ratio, height: imgHeight * ratio };
-}
-
-async function getImageDimensions(dataUrl) {
+async function getImageSize(dataUrl) {
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => resolve({ width: img.width, height: img.height });
@@ -56,159 +56,161 @@ async function getImageDimensions(dataUrl) {
   });
 }
 
-export async function generateReportPDF(report, photos = []) {
-  const doc = new jsPDF({ unit: "mm", format: "a4", compress: true });
+export async function generateReportPDF({ report, fotos, numeroRelatorio, draft = false }) {
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 14;
-  let y = 18;
+  let y = 16;
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(18);
-  doc.text("RELATÓRIO DE SERVIÇO", margin, y);
+  doc.text("RELATÓRIO DE SERVIÇO MECÂNICO", margin, y);
 
   doc.setFontSize(11);
-  doc.setFont("helvetica", "normal");
-  doc.text(`Nº ${report.numero || "---"}`, pageWidth - margin, y, { align: "right" });
-  y += 10;
+  doc.setTextColor(70);
+  doc.text(`Nº ${numeroRelatorio}${draft ? " - RASCUNHO" : ""}`, pageWidth - margin, y, { align: "right" });
+  doc.setTextColor(0);
 
-  doc.setDrawColor(20, 20, 20);
+  y += 11;
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "bold");
+  doc.text("Cliente", margin, y);
+  doc.text("Veículo", 82, y);
+  doc.text("Recebimento", 140, y);
+  y += 6;
+  doc.setFont("helvetica", "normal");
+  doc.text(String(report.cliente || "-"), margin, y);
+  doc.text(String(report.veiculo || "-"), 82, y);
+  doc.text(formatDateBR(report.dataRecebimento) || "-", 140, y);
+
+  y += 8;
+  doc.setFont("helvetica", "bold");
+  doc.text("Entrega", margin, y);
+  y += 6;
+  doc.setFont("helvetica", "normal");
+  doc.text(formatDateBR(report.dataEntrega) || "-", margin, y);
+
+  y += 11;
+  doc.setLineWidth(0.2);
   doc.line(margin, y, pageWidth - margin, y);
   y += 8;
 
-  const left = margin;
-  const right = 108;
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "bold");
-  doc.text("Cliente", left, y);
-  doc.text("Veículo", right, y);
-  doc.setFont("helvetica", "normal");
-  doc.text(report.cliente || "-", left, y + 6);
-  doc.text(report.veiculo || "-", right, y + 6);
-  y += 15;
-
-  doc.setFont("helvetica", "bold");
-  doc.text("Data de recebimento", left, y);
-  doc.text("Data de entrega", right, y);
-  doc.setFont("helvetica", "normal");
-  doc.text(formatDateBR(report.dataRecebimento) || "-", left, y + 6);
-  doc.text(formatDateBR(report.dataEntrega) || "-", right, y + 6);
-  y += 14;
-
+  doc.setFontSize(12);
   y = addWrappedText(doc, "Problema Relatado pelo Cliente", report.problema, margin, y, 180);
-  y = ensureSpace(doc, y, 28);
+  y += 3;
+  y = ensurePage(doc, y);
   y = addWrappedText(doc, "Diagnóstico Técnico", report.diagnostico, margin, y, 180);
-  y = ensureSpace(doc, y, 28);
+  y += 3;
+  y = ensurePage(doc, y);
+  y = addWrappedText(doc, "Serviços Realizados", report.servicos, margin, y, 180);
 
+  y += 8;
+  y = ensurePage(doc, y + 40);
   doc.setFont("helvetica", "bold");
-  doc.text("Serviços Realizados", margin, y);
-  y += 6;
-  doc.setFont("helvetica", "normal");
-  const servicos = splitText(doc, report.servicos || "-", 180);
-  doc.text(servicos, margin, y);
-  y += servicos.length * 5 + 8;
-
-  y = ensureSpace(doc, y, 55);
-  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
   doc.text("Orçamento / Custos", margin, y);
   y += 7;
 
   const tableX = margin;
   const tableW = pageWidth - margin * 2;
   const itemW = 130;
-  doc.setFillColor(235, 235, 235);
-  doc.rect(tableX, y - 5, tableW, 8, "F");
+  const valorW = tableW - itemW;
   doc.setFontSize(10);
-  doc.text("Item", tableX + 3, y);
-  doc.text("Valor", tableX + itemW + 3, y);
-  y += 6;
-  doc.setFont("helvetica", "normal");
-
-  const items = Array.isArray(report.itens) ? report.itens : [];
-  for (const item of items) {
-    y = ensureSpace(doc, y, 12);
-    const desc = item.descricao || "-";
-    const valor = money(item.valor);
-    const lines = splitText(doc, desc, itemW - 6);
-    const rowH = Math.max(8, lines.length * 5 + 3);
-    doc.rect(tableX, y - 5, tableW, rowH);
-    doc.line(tableX + itemW, y - 5, tableX + itemW, y - 5 + rowH);
-    doc.text(lines, tableX + 3, y);
-    doc.text(valor, tableX + itemW + 3, y);
-    y += rowH;
-  }
-
-  y = ensureSpace(doc, y, 14);
-  const total = items.reduce((sum, item) => sum + Number(item.valor || 0), 0);
+  doc.setFillColor(230, 230, 230);
+  doc.rect(tableX, y, tableW, 8, "F");
   doc.setFont("helvetica", "bold");
-  doc.setFillColor(220, 220, 220);
-  doc.rect(tableX, y - 5, tableW, 9, "F");
-  doc.rect(tableX, y - 5, tableW, 9);
-  doc.line(tableX + itemW, y - 5, tableX + itemW, y + 4);
-  doc.text("TOTAL", tableX + 3, y);
-  doc.text(money(total), tableX + itemW + 3, y);
-  y += 16;
+  doc.text("Item", tableX + 3, y + 5.5);
+  doc.text("Valor (R$)", tableX + itemW + 3, y + 5.5);
+  y += 8;
 
-  if (photos.length > 0) {
-    y = ensureSpace(doc, y, 35);
+  let total = 0;
+  doc.setFont("helvetica", "normal");
+  (report.itens || []).filter(i => i.descricao || i.valor).forEach((item) => {
+    y = ensurePage(doc, y + 9);
+    const valor = parseMoney(item.valor);
+    total += valor;
+    doc.rect(tableX, y, tableW, 8);
+    doc.line(tableX + itemW, y, tableX + itemW, y + 8);
+    doc.text(String(item.descricao || "-"), tableX + 3, y + 5.5, { maxWidth: itemW - 6 });
+    doc.text(money(valor), tableX + itemW + 3, y + 5.5);
+    y += 8;
+  });
+
+  y = ensurePage(doc, y + 10);
+  doc.setFillColor(220, 220, 220);
+  doc.rect(tableX, y, tableW, 9, "F");
+  doc.rect(tableX, y, tableW, 9);
+  doc.line(tableX + itemW, y, tableX + itemW, y + 9);
+  doc.setFont("helvetica", "bold");
+  doc.text("TOTAL", tableX + 3, y + 6);
+  doc.text(money(total), tableX + itemW + 3, y + 6);
+  y += 17;
+
+  if (fotos?.length) {
+    y = ensurePage(doc, y + 15);
     doc.setFontSize(15);
     doc.setFont("helvetica", "bold");
     doc.text("Registro Fotográfico", margin, y);
     y += 8;
 
-    const cardW = 84;
-    const gap = 8;
-    const imgMaxH = 62;
-    const colX = [margin, margin + cardW + gap];
+    const gap = 6;
+    const colW = (pageWidth - margin * 2 - gap) / 2;
+    const imgMaxH = 72;
     let col = 0;
+    let rowY = y;
+    let rowH = 0;
 
-    for (const photo of photos) {
-      if (!photo.dataUrl) continue;
-      const caption = photo.caption || "";
-      const dims = await getImageDimensions(photo.dataUrl);
-      const fit = getImageSizeFit(dims.width, dims.height, cardW, imgMaxH);
-      const captionLines = splitText(doc, caption, cardW - 4);
-      const captionH = caption ? captionLines.length * 5 + 4 : 0;
-      const cardH = fit.height + captionH + 4;
+    for (const foto of fotos) {
+      const x = margin + col * (colW + gap);
+      const { width, height } = await getImageSize(foto.dataUrl);
+      const ratio = width / height || 1.33;
+      let imgW = colW;
+      let imgH = imgW / ratio;
+      if (imgH > imgMaxH) {
+        imgH = imgMaxH;
+        imgW = imgH * ratio;
+      }
+      const captionLines = splitLines(doc, foto.legenda || "", colW - 4);
+      const captionH = foto.legenda ? captionLines.length * 5 + 7 : 5;
+      const cardH = imgH + captionH + 2;
 
-      if (y + cardH > 282) {
+      if (rowY + cardH > pageHeight - 18) {
         doc.addPage();
-        y = 18;
+        rowY = 18;
         col = 0;
+        rowH = 0;
       }
 
-      const x = colX[col];
-      doc.setDrawColor(210, 210, 210);
-      doc.rect(x, y, cardW, cardH);
-      const imgX = x + (cardW - fit.width) / 2;
-      doc.addImage(photo.dataUrl, "JPEG", imgX, y + 2, fit.width, fit.height, undefined, "FAST");
-      if (caption) {
+      doc.setDrawColor(210);
+      doc.rect(x, rowY, colW, cardH);
+      doc.addImage(foto.dataUrl, "JPEG", x + (colW - imgW) / 2, rowY + 2, imgW, imgH);
+      if (foto.legenda) {
         doc.setFontSize(9);
         doc.setFont("helvetica", "normal");
-        doc.text(captionLines, x + 2, y + fit.height + 8);
+        doc.setTextColor(70);
+        doc.text(captionLines, x + 2, rowY + imgH + 8);
+        doc.setTextColor(0);
       }
 
+      rowH = Math.max(rowH, cardH);
       if (col === 0) {
         col = 1;
       } else {
         col = 0;
-        y += cardH + 8;
+        rowY += rowH + 7;
+        rowH = 0;
       }
     }
-    if (col === 1) y += 76;
+    y = rowY + rowH + 10;
   }
 
-  y = ensureSpace(doc, y, 20);
+  y = ensurePage(doc, y + 15);
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
-  doc.text("Relatório elaborado de forma técnica e profissional para registro dos serviços executados.", margin, y + 8);
+  doc.setTextColor(80);
+  doc.text("Relatório elaborado de forma técnica e profissional para registro dos serviços executados.", margin, Math.min(y, pageHeight - 18));
 
-  const pageCount = doc.getNumberOfPages();
-  for (let i = 1; i <= pageCount; i += 1) {
-    doc.setPage(i);
-    doc.setFontSize(8);
-    doc.text(`Página ${i} de ${pageCount}`, pageWidth - margin, 292, { align: "right" });
-  }
-
-  const safeNumber = String(report.numero || "relatorio").replaceAll("/", "-");
-  doc.save(`Relatorio_${safeNumber}.pdf`);
+  const filename = `Relatorio_${numeroRelatorio.replace("/", "-")}_${(report.cliente || "cliente").replace(/[^a-z0-9]/gi, "_")}.pdf`;
+  doc.save(filename);
 }

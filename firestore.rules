@@ -1,9 +1,12 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    // MODO TESTE: permite criar, ler, editar e apagar relatórios sem login.
-    // Para produção, troque por regras com Authentication.
-    match /{document=**} {
+    match /relatorios/{document=**} {
+      allow read, write: if true;
+    }
+
+    match /contadores/{document=**} {
       allow read, write: if true;
     }
   }
