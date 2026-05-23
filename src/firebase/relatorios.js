@@ -24,12 +24,14 @@ export async function gerarNumeroRelatorio() {
 export async function uploadFotos(fotos, codigo) {
   const urls = [];
   for (const [index, foto] of fotos.entries()) {
-    const extensao = foto.name.split('.').pop() || 'jpg';
+    const arquivo = foto.file || foto;
+    const legenda = foto.legenda || '';
+    const extensao = arquivo.name.split('.').pop() || 'jpg';
     const caminho = `relatorios/${codigo.replace('/', '-')}/foto-${index + 1}.${extensao}`;
     const arquivoRef = ref(storage, caminho);
-    await uploadBytes(arquivoRef, foto);
+    await uploadBytes(arquivoRef, arquivo);
     const url = await getDownloadURL(arquivoRef);
-    urls.push({ nome: foto.name, url, caminho });
+    urls.push({ nome: arquivo.name, legenda, url, caminho });
   }
   return urls;
 }

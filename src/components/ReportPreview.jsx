@@ -54,7 +54,12 @@ export default function ReportPreview({ dados, fotosPreview }) {
       <section className="pdf-section photos-section">
         <h2>Registro Fotográfico</h2>
         <div className="photos-grid">
-          {fotosPreview.map((foto, index) => <img key={index} src={foto} alt={`Registro ${index + 1}`} />)}
+          {fotosPreview.map((foto, index) => (
+            <figure className="photo-item" key={index}>
+              <img src={foto.url} alt={foto.legenda || `Registro ${index + 1}`} />
+              <figcaption>{foto.legenda || `Foto ${index + 1}`}</figcaption>
+            </figure>
+          ))}
           {!fotosPreview.length && <p>Nenhuma foto anexada.</p>}
         </div>
       </section>

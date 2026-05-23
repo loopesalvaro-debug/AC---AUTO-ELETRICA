@@ -23,7 +23,11 @@ export default function App() {
   const [salvando, setSalvando] = useState(false);
   const [mensagem, setMensagem] = useState('');
 
-  const fotosPreview = useMemo(() => fotos.map((foto) => URL.createObjectURL(foto)), [fotos]);
+  const fotosPreview = useMemo(() => fotos.map((foto) => ({
+    url: URL.createObjectURL(foto.file),
+    legenda: foto.legenda || '',
+    nome: foto.file.name,
+  })), [fotos]);
 
   function alterarCampo(campo, valor) {
     setDados((atual) => ({ ...atual, [campo]: valor }));
@@ -55,6 +59,19 @@ export default function App() {
 
   function removerItem(index) {
     alterarCampo('itens', dados.itens.filter((_, i) => i !== index));
+  }
+
+  function selecionarFotos(arquivos) {
+    const novasFotos = Array.from(arquivos || []).map((file) => ({ file, legenda: '' }));
+    setFotos(novasFotos);
+  }
+
+  function alterarLegendaFoto(index, legenda) {
+    setFotos((atuais) => atuais.map((foto, i) => i === index ? { ...foto, legenda } : foto));
+  }
+
+  function removerFoto(index) {
+    setFotos((atuais) => atuais.filter((_, i) => i !== index));
   }
 
   async function salvarEGerarPDF() {
@@ -121,7 +138,27 @@ export default function App() {
             </div>
           ))}
 
-          <label>Registro fotográfico<input type="file" multiple accept="image/*" onChange={(e) => setFotos(Array.from(e.target.files || []))} /></label>
+          <label>Registro fotográfico<input type="file" multiple accept="image/*" onChange={(e) => selecionarFotos(e.target.files)} /></label>
+
+          {fotos.length > 0 && (
+            <div className="photo-caption-list">
+              <h3>Legendas das fotos</h3>
+              {fotos.map((foto, index) => (
+                <div className="photo-caption-card" key={`${foto.file.name}-${index}`}>
+                  <div className="photo-caption-info">
+                    <img src={URL.createObjectURL(foto.file)} alt={`Prévia ${index + 1}`} />
+                    <span>Foto {index + 1}: {foto.file.name}</span>
+                  </div>
+                  <input
+                    value={foto.legenda}
+                    onChange={(e) => alterarLegendaFoto(index, e.target.value)}
+                    placeholder="Legenda da foto. Ex: Platô da embreagem com desgaste"
+                  />
+                  <button type="button" className="icon" onClick={() => removerFoto(index)}><Trash2 size={16} /> Remover</button>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="actions">
             <button type="button" className="primary" disabled={salvando} onClick={salvarEGerarPDF}><Save size={18} /> Salvar e gerar PDF</button>

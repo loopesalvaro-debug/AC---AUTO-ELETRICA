@@ -1,5 +1,4 @@
-[README.md](https://github.com/user-attachments/files/28179764/README.md)
-# AC---AUTO-ELETRICA# Gerador de Relatórios de Serviço
+# Gerador de Relatórios de Serviço
 
 Aplicativo React/Vite para preencher relatórios de serviço, salvar no Firebase e gerar PDF com numeração automática no padrão `001/2026`.
 
@@ -167,3 +166,21 @@ git push -u origin main
 - Adicionar logo da empresa no PDF.
 - Criar assinatura digital do cliente.
 - Botão de envio por WhatsApp.
+
+
+## Legendas nas fotos
+
+Esta versão permite inserir uma legenda individual para cada foto anexada.
+
+Como usar:
+
+1. Clique em **Registro fotográfico** e selecione as imagens.
+2. Abaixo do campo de upload, o sistema mostra cada foto selecionada.
+3. Preencha a legenda de cada imagem.
+4. Ao clicar em **Salvar e gerar PDF**, as legendas aparecem abaixo das fotos no PDF e também são salvas no Firebase junto com a URL da imagem.
+
+Exemplo de legenda:
+
+```txt
+Platô da embreagem com sinais de desgaste.
+```
